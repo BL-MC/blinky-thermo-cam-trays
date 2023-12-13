@@ -8,6 +8,14 @@
         "env": []
     },
     {
+        "id": "62399fb485b90a97",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
         "id": "6ad7c930.1a06b8",
         "type": "ui_base",
         "theme": {
@@ -443,7 +451,7 @@
         "type": "function",
         "z": "35ebad916f0a27ed",
         "name": "Create Readings",
-        "func": "let topicSplit = msg.topic.split('/');\nif (topicSplit[1] == 'tray') return [null,null];\nlet trayName = topicSplit[3];\nlet traysConfig = flow.get('traysConfig');\nif (traysConfig == undefined) return [null,null];\nif (traysConfig.length < 1) return [null,null];\nlet trayConfig = null;\nlet trayIndex = -1;\nfor (let ii = 0; ii < traysConfig.length; ++ii)\n{\n    if (traysConfig[ii].tray.name == trayName)\n    {\n        trayConfig = traysConfig[ii];\n        trayIndex = ii;\n    }\n}\nif (trayConfig ==  null) return [null,null];\n\nif (Number(env.get(\"PYTHONCUBETYPE\")) > 0)\n{\n    trayConfig.cubeType = topicSplit[1];\n    trayConfig.tray.timeStamp = new Date().getTime();\n    trayConfig.tray.watchdog.value = msg.payload.watchdog;\n    trayConfig.tray.sensor1.value = msg.payload.sensor1 - trayConfig.tray.sensor1_offset.value;\n    trayConfig.tray.sensor2.value = msg.payload.sensor2 - trayConfig.tray.sensor2_offset.value;\n    trayConfig.tray.chipTemp.value = msg.payload.chipTemp - trayConfig.tray.chipTemp_offset.value;\n\n}\nelse\n{\n    let stateView  = new DataView(new ArrayBuffer(2)); \n    for (let ib = 0; ib < 2; ++ib)   stateView.setUint8(ib, msg.payload[1 - ib]); \n    let state = stateView.getInt16(0) \n    trayConfig.tray.timeStamp = new Date().getTime();\n\n\n    let dataView  = new DataView(new ArrayBuffer(2)); \n    for (let ib = 0; ib < 2; ++ib)   dataView.setUint8(ib, msg.payload[(1 * 2) + 1 - ib]); \n    trayConfig.tray.watchdog.value = dataView.getInt16(0);\n\n    for (let ib = 0; ib < 2; ++ib)   dataView.setUint8(ib, msg.payload[(2 * 2) + 1 - ib]); \n    trayConfig.tray.chipTemp.value = (dataView.getInt16(0) / 100) - trayConfig.tray.chipTemp_offset.value;\n    for (let ib = 0; ib < 2; ++ib)   dataView.setUint8(ib, msg.payload[(3 * 2) + 1 - ib]); \n    trayConfig.tray.sensor1.value = (dataView.getInt16(0) / 100) - trayConfig.tray.sensor1_offset.value;\n    for (let ib = 0; ib < 2; ++ib)   dataView.setUint8(ib, msg.payload[(4 * 2) + 1 - ib]); \n    trayConfig.tray.sensor2.value = (dataView.getInt16(0) / 100) - trayConfig.tray.sensor2_offset.value;\n}\ntrayConfig.tray.lastUpdate.value = 0;\nlet newMsg = {topic:trayName, payload:trayConfig.tray};\nlet archiveMsg = null;\nlet archiveTimes = flow.get('archiveTimes');\nif ((trayConfig.tray.timeStamp - trayConfig.archiveTime) > trayConfig.tray.arcPeriod)\n{\n    trayConfig.archiveTime = trayConfig.tray.timeStamp;\n    archiveMsg = newMsg;\n}\nreturn  [newMsg,archiveMsg];\n\n\nfunction conductance(raw)\n{\n    let fraw = raw;\n    let fcond = 0.0;\n    let shortVal = trayConfig.tray.sensorShortVolts.value;\n    let openVal = trayConfig.tray.refVolts.value;\n    if (raw <= shortVal) fraw = shortVal + 0.0001;\n    if (raw >= openVal)  fraw = openVal  - 0.0001;\n    let traw = (fraw     - shortVal) / 3.3;\n    let topen= (openVal - shortVal) / 3.3;\n    fcond = trayConfig.tray.condMult.value * (topen * (1.0 - traw) - traw * (1.0 - topen)) / (topen * traw);\n    if (fcond < 0.0 ) fcond = 0.0;\n    if (fcond > 32766.0 ) fcond = 32766.0;\n    fcond = Math.round(1000 * fcond) / 1000;\n    return fcond; \n}\n",
+        "func": "let topicSplit = msg.topic.split('/');\nif (topicSplit[1] == 'tray') return [null,null];\nlet trayName = topicSplit[3];\nlet traysConfig = flow.get('traysConfig');\nif (traysConfig == undefined) return [null,null];\nif (traysConfig.length < 1) return [null,null];\nlet trayConfig = null;\nlet trayIndex = -1;\nfor (let ii = 0; ii < traysConfig.length; ++ii)\n{\n    if (traysConfig[ii].tray.name == trayName)\n    {\n        trayConfig = traysConfig[ii];\n        trayIndex = ii;\n    }\n}\nif (trayConfig ==  null) return [null,null];\n\nlet imgArray = [];\nlet dataView     = new DataView(new ArrayBuffer(2));\nlet ndataPts = 4800 * trayConfig.tray.resMode.value * trayConfig.tray.resMode.value;\nlet nrows = 60 * trayConfig.tray.resMode.value;\nlet ncols = 80 * trayConfig.tray.resMode.value;\nfor (let irow = 0; irow < ndataPts; ++irow)\n{\n        dataView.setUint8(0, msg.payload[irow * 2]);\n        dataView.setUint8(1, msg.payload[irow * 2 + 1]);\n        imgArray[irow] = dataView.getUint16(0);\n}\nlet minval = imgArray[0];\nlet maxval = imgArray[0];\nfor (let irow = 0; irow < ndataPts; ++irow)\n{\n        if ( minval > imgArray[irow]) minval = imgArray[irow];\n        if ( maxval < imgArray[irow]) maxval = imgArray[irow];\n}\nif (minval == 0) return [null, null];\nif (trayConfig.tray.scaleMode.value == 0)\n{\n    minval = Math.round(100.0 * trayConfig.tray.pixelMin.value + 27315);\n    maxval = Math.round(100.0 * trayConfig.tray.pixelMax.value + 27315);\n}\nlet imgArray2D = [];\nlet deltaVal = maxval - minval;\nif (deltaVal == 0) deltaVal = 1;\nfor (let irow = 0; irow < nrows; ++irow)\n{\n    imgArray2D.push([]);\n    for (let icol = 0; icol < ncols; ++icol)\n    {\n        let pixy = Math.floor(256.0 * (imgArray[irow * ncols + icol] - minval) / deltaVal);\n        if (pixy < 0) pixy = 0;\n        if (pixy > 255) pixy=255;\n        imgArray2D[irow].push(pixy);\n    }    \n}\nlet imgArray2DT = [];\nif (trayConfig.tray.transpose.value == 1)\n{\n    for (let icol = 0; icol < ncols; ++icol)\n    {\n        imgArray2DT[icol] = [];\n        for (let irow = 0; irow < nrows; ++irow)\n        {\n            imgArray2DT[icol][irow] = imgArray2D[irow][icol];\n        }\n    }\n    imgArray2D = imgArray2DT;\n    let tempNrows = nrows;\n    nrows = ncols;\n    ncols = tempNrows; \n}\nlet imgArray2DFV = [];\nif (trayConfig.tray.flipVertical.value == 1)\n{\n    for (let irow = 0; irow < nrows; ++irow)\n    {\n        imgArray2DFV[irow] = [];\n        for (let icol = 0; icol < ncols; ++icol)\n        {\n            imgArray2DFV[irow][icol] = imgArray2D[nrows - irow - 1][icol];\n        }    \n    }\n    imgArray2D = imgArray2DFV;\n}\nlet imgArray2DFH = [];\nif (trayConfig.tray.flipHorizontal.value == 1)\n{\n    for (let irow = 0; irow < nrows; ++irow)\n    {\n        imgArray2DFH[irow] = [];\n        for (let icol = 0; icol < ncols; ++icol)\n        {\n            imgArray2DFH[irow][icol] = imgArray2D[irow][ncols - icol - 1];\n        }    \n    }\n    imgArray2D = imgArray2DFH;\n}\nlet pgm = \n{\n    'type'      : 'P2',\n    'timeStamp' : new Date().getTime(),\n    'nrows'     : nrows,\n    'ncols'     : ncols,\n    'minval'    : minval,\n    'maxval'    : maxval,\n    'imageArray': imgArray2D\n};\ntrayConfig.tray.manualTrigger.value = 0;\ntrayConfig.tray.imageData.value = pgm;\ntrayConfig.tray.timeStamp = pgm.timeStamp;\n\nif (trayConfig.tray.scaleMode.value == 1)\n{\n    trayConfig.tray.pixelMin.value = Math.round(0.1 *  (minval - 27315) ) / 10;\n    trayConfig.tray.pixelMax.value  = Math.round(0.1 *  (maxval - 27315) ) / 10;\n}\n\nlet newMsg = {topic:trayName, payload:trayConfig.tray};\nlet archiveMsg = newMsg;\ntrayConfig.archiveTime = trayConfig.tray.timeStamp;\nreturn  [newMsg,archiveMsg];\n\n",
         "outputs": 2,
         "noerr": 0,
         "initialize": "",
@@ -465,7 +473,7 @@
         "type": "function",
         "z": "35ebad916f0a27ed",
         "name": "Publish tray",
-        "func": "let tray = msg.payload;\nlet newMsg = \n{\n    topic: flow.get('trayProps').box + '/tray/' + tray.type + '/' + tray.name + '/reading',\n    payload: JSON.stringify(tray)\n};\nreturn  newMsg;  \n",
+        "func": "let tray = msg.payload;\nlet newMsg = \n{\n    topic: flow.get('trayProps').box + '/tray/' + tray.type + '/' + tray.name + '/reading',\n    payload: tray\n};\nreturn  newMsg;  \n",
         "outputs": 1,
         "noerr": 0,
         "initialize": "",
@@ -504,14 +512,14 @@
         "type": "function",
         "z": "35ebad916f0a27ed",
         "name": "Archive tray",
-        "func": "let tray = msg.payload;\nlet newMsg = \n{\n    topic: flow.get('trayProps').box + '/tray/' + tray.type + '/' + tray.name + '/archive',\n    payload: JSON.stringify(tray)\n};\nreturn  newMsg;  \n",
+        "func": "let tray = msg.payload;\nlet newMsg = \n{\n    topic: flow.get('trayProps').box + '/tray/' + tray.type + '/' + tray.name + '/archive',\n    payload: tray\n};\nreturn  newMsg;  \n",
         "outputs": 1,
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
         "x": 1390,
-        "y": 340,
+        "y": 320,
         "wires": [
             [
                 "81a2eeceab4079a2"
@@ -528,7 +536,7 @@
             "db68a00ed2d7ce63"
         ],
         "x": 1115,
-        "y": 340,
+        "y": 320,
         "wires": [
             [
                 "c0c0f2e784c5886e"
@@ -553,7 +561,7 @@
         "allowrate": false,
         "outputs": 1,
         "x": 1540,
-        "y": 340,
+        "y": 320,
         "wires": [
             [
                 "05f1df43d04e1ad1"
@@ -591,7 +599,7 @@
         "finalize": "",
         "libs": [],
         "x": 1230,
-        "y": 340,
+        "y": 320,
         "wires": [
             [
                 "03302d45194b1091"
@@ -612,8 +620,8 @@
         "correl": "",
         "expiry": "",
         "broker": "84d80994.260508",
-        "x": 1710,
-        "y": 280,
+        "x": 1730,
+        "y": 300,
         "wires": []
     },
     {
@@ -635,8 +643,8 @@
         "type": "function",
         "z": "35ebad916f0a27ed",
         "name": "Create Setting",
-        "func": "let tray = msg.trayConfig.tray;\nlet normalSettingMsg = {topic:'settingDone', payload:tray};\nlet trayControlMessage = null;\nlet trayProps  = flow.get('trayProps');\n\nswitch (msg.payload.cube) \n{\n    case 'alias':\n        tray[msg.payload.cube].value = msg.payload.value;\n    break;\n    case 'chipTemp_offset':\n        tray[msg.payload.cube].value = msg.payload.value;\n    break;\n    case 'sensor1_offset':\n        tray[msg.payload.cube].value = msg.payload.value;\n    break;\n    case 'sensor2_offset':\n         tray[msg.payload.cube].value = msg.payload.value;\n    break;\n    case 'trayControl':\n        switch(msg.payload.value)\n        {\n            case 0:\n                tray.trayControl.value = 0;\n                break;\n            case 1:\n                tray.trayControl.value = -1;\n                break;\n            case 2:\n                if (tray.trayControl.value > 0)\n                {\n                    tray.trayControl.value = 2;\n                    trayControlMessage =\n                    {\n                        topic: trayProps.box + '/tray/' + tray.type + '/' + tray.name + '/echo',\n                        payload: JSON.stringify({ topic: trayProps.box + '/tray/' + tray.type + '/' + tray.name + '/setting/echo' })\n                    };\n                }\n                break;\n            default:\n                tray.trayControl.value = 0;\n                break;\n            }\n    break;\n    default:\n        break;\n}\n\nreturn [normalSettingMsg, trayControlMessage];",
-        "outputs": 2,
+        "func": "let tray = msg.trayConfig.tray;\nlet normalSettingMsg = {topic:'settingDone', payload:tray};\nlet trayControlMessage = null;\nlet trayProps  = flow.get('trayProps');\nlet deviceProps = {\n    resMode   :   msg.trayConfig.tray.resMode.value,\n    imageDelay : msg.trayConfig.tray.imageDelay.value,\n    triggerMode: msg.trayConfig.tray.triggerMode.value,\n    manualTrigger: msg.trayConfig.tray.manualTrigger.value,\n    reset: msg.trayConfig.tray.reset.value\n};\nlet sendToCube = false;\n\nswitch (msg.payload.cube) \n{\n    case 'alias':\n        tray[msg.payload.cube].value = msg.payload.value;\n        break;\n    case 'flipHorizontal':\n        tray[msg.payload.cube].value = msg.payload.value;\n        break;\n    case 'flipVertical':\n        tray[msg.payload.cube].value = msg.payload.value;\n        break;\n    case 'scaleMode':\n        tray[msg.payload.cube].value = msg.payload.value;\n        break;\n    case 'transpose':\n        tray[msg.payload.cube].value = msg.payload.value;\n        break;\n    case 'resMode':\n        tray[msg.payload.cube].value = msg.payload.value;\n        deviceProps[msg.payload.cube] = msg.payload.value;\n        sendToCube = true;\n        break;\n    case 'imageDelay':\n        tray[msg.payload.cube].value = msg.payload.value;\n        deviceProps[msg.payload.cube] = msg.payload.value;\n        sendToCube = true;\n        break;\n    case 'triggerMode':\n        tray[msg.payload.cube].value = msg.payload.value;\n        deviceProps[msg.payload.cube] = msg.payload.value;\n        sendToCube = true;\n        break;\n    case 'manualTrigger':\n        tray[msg.payload.cube].value = msg.payload.value;\n        deviceProps[msg.payload.cube] = msg.payload.value;\n        sendToCube = true;\n        break;\n    case 'reset':\n        tray[msg.payload.cube].value = msg.payload.value;\n        deviceProps[msg.payload.cube] = msg.payload.value;\n        sendToCube = true;\n        break;\n    case 'trayControl':\n        switch(msg.payload.value)\n        {\n            case 0:\n                tray.trayControl.value = 0;\n                break;\n            case 1:\n                tray.trayControl.value = -1;\n                break;\n            case 2:\n                if (tray.trayControl.value > 0)\n                {\n                    tray.trayControl.value = 2;\n                    trayControlMessage =\n                    {\n                        topic: trayProps.box + '/tray/' + tray.type + '/' + tray.name + '/echo',\n                        payload: JSON.stringify({ topic: trayProps.box + '/tray/' + tray.type + '/' + tray.name + '/setting/echo' })\n                    };\n                }\n                break;\n            default:\n                tray.trayControl.value = 0;\n                break;\n            }\n    break;\n    default:\n        break;\n}\nlet cubeMessage = null;\nif (sendToCube)\n{\n    cubeMessage = \n    {\n        topic: \"cubeMessage\",\n        payload: [\n            {topic:trayProps.box + '/cube/' + tray.type + '/' + tray.name + '/setting/setting',payload:deviceProps, rate:200},\n            {topic:trayProps.box + '/' + env.get(\"HUB\") + '/' + tray.type + '/' + tray.name + '/setting/setting',payload:deviceProps, rate:200}]\n    }\n}\nreturn [normalSettingMsg, trayControlMessage,cubeMessage];",
+        "outputs": 3,
         "noerr": 0,
         "initialize": "",
         "finalize": "",
@@ -649,6 +657,9 @@
             ],
             [
                 "55b54f13100eb833"
+            ],
+            [
+                "74f774edcd0df947"
             ]
         ]
     },
@@ -843,7 +854,7 @@
             "f882c2407b2620be"
         ],
         "x": 1025,
-        "y": 340,
+        "y": 320,
         "wires": []
     },
     {
@@ -866,55 +877,7 @@
         ]
     },
     {
-        "id": "ee72b88e7a33bf0f",
-        "type": "inject",
-        "z": "35ebad916f0a27ed",
-        "name": "Every Minute",
-        "props": [
-            {
-                "p": "payload"
-            },
-            {
-                "p": "topic",
-                "vt": "str"
-            }
-        ],
-        "repeat": "60",
-        "crontab": "",
-        "once": true,
-        "onceDelay": "60",
-        "topic": "",
-        "payload": "",
-        "payloadType": "date",
-        "x": 220,
-        "y": 820,
-        "wires": [
-            [
-                "8ed7b16c7cf23baa"
-            ]
-        ]
-    },
-    {
-        "id": "8ed7b16c7cf23baa",
-        "type": "function",
-        "z": "35ebad916f0a27ed",
-        "name": "Check for stale trays",
-        "func": "let traysConfig = flow.get('traysConfig');\nlet now = new Date().getTime();\nlet staleTrays = [];\nfor (let ii = 0; ii < traysConfig.length; ++ii)\n{\n    let milli = now - traysConfig[ii].tray.timeStamp;\n    traysConfig[ii].tray.lastUpdate.value = Math.round(milli / 3600) / 1000;\n    if (milli > traysConfig[ii].tray.arcPeriod)\n    {\n        staleTrays.push(traysConfig[ii].tray);\n    }\n}\nif (staleTrays.length < 1) return null;\nreturn {topic: 'staleTrays',payload:staleTrays};",
-        "outputs": 1,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 420,
-        "y": 820,
-        "wires": [
-            [
-                "b8cff6830921f2a3"
-            ]
-        ]
-    },
-    {
-        "id": "b8cff6830921f2a3",
+        "id": "74f774edcd0df947",
         "type": "split",
         "z": "35ebad916f0a27ed",
         "name": "",
@@ -924,25 +887,56 @@
         "arraySpltType": "len",
         "stream": false,
         "addname": "",
-        "x": 630,
-        "y": 820,
+        "x": 1150,
+        "y": 380,
         "wires": [
             [
-                "fa6fa09999cb358d"
+                "8135816a2530f696"
             ]
         ]
     },
     {
-        "id": "fa6fa09999cb358d",
-        "type": "link out",
+        "id": "8135816a2530f696",
+        "type": "function",
         "z": "35ebad916f0a27ed",
-        "name": "Stale Tray out",
-        "mode": "link",
-        "links": [
-            "6b45b4c31fad6b8b"
-        ],
-        "x": 765,
-        "y": 820,
-        "wires": []
+        "name": "promote",
+        "func": "return msg.payload;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1340,
+        "y": 380,
+        "wires": [
+            [
+                "359f4491b50a1691"
+            ]
+        ]
+    },
+    {
+        "id": "359f4491b50a1691",
+        "type": "delay",
+        "z": "35ebad916f0a27ed",
+        "name": "",
+        "pauseType": "rate",
+        "timeout": "5",
+        "timeoutUnits": "seconds",
+        "rate": "1",
+        "nbRateUnits": "1",
+        "rateUnits": "second",
+        "randomFirst": "1",
+        "randomLast": "5",
+        "randomUnits": "seconds",
+        "drop": false,
+        "allowrate": true,
+        "outputs": 1,
+        "x": 1530,
+        "y": 380,
+        "wires": [
+            [
+                "05f1df43d04e1ad1"
+            ]
+        ]
     }
 ]
